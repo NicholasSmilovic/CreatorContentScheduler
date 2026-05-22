@@ -31,7 +31,10 @@ export default function PostsList() {
     <div className="posts-list-page">
       <div className="page-header">
         <h1>Your posts</h1>
-        <Link to="/posts/new" className="btn primary">New post</Link>
+        <div className="header-actions">
+          <Link to="/series/new" className="btn">New Series</Link>
+          <Link to="/posts/new" className="btn primary">New post</Link>
+        </div>
       </div>
       <div className="filters">
         <select
@@ -63,6 +66,7 @@ export default function PostsList() {
               <th>Title</th>
               <th>Platform</th>
               <th>Scheduled</th>
+              <th>Series</th>
               <th>Status</th>
               <th></th>
             </tr>
@@ -70,7 +74,7 @@ export default function PostsList() {
           <tbody>
             {posts.length === 0 ? (
               <tr>
-                <td colSpan={5}>No posts yet. <Link to="/posts/new">Create one</Link>.</td>
+                <td colSpan={6}>No posts yet. <Link to="/posts/new">Create one</Link>.</td>
               </tr>
             ) : (
               posts.map((p) => (
@@ -80,7 +84,14 @@ export default function PostsList() {
                   <td>
                     {p.scheduled_at
                       ? format(new Date(p.scheduled_at), "MMM d, yyyy HH:mm")
-                      : "—"}
+                      : "-"}
+                  </td>
+                  <td>
+                    {p.series ? (
+                      <Link to={`/series/${p.series.id}`} className="series-link">
+                        {p.series.name}
+                      </Link>
+                    ) : "-"}
                   </td>
                   <td><span className={`status status-${p.status}`}>{p.status}</span></td>
                   <td>

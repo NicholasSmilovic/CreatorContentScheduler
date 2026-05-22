@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { postsApi } from "../api/client";
+import { format } from "date-fns";
+import { postsApi, seriesApi } from "../api/client";
 
 const PLATFORMS = ["youtube", "instagram", "twitter", "tiktok", "linkedin"];
 const STATUSES = ["draft", "scheduled", "published", "failed"];
@@ -16,12 +17,24 @@ export default function PostEdit() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [seriesOptions, setSeriesOptions] = useState([]);
   const [form, setForm] = useState({
     title: "",
     platform: "youtube",
     scheduled_at: "",
     status: "draft",
+    series_id: "",
+    series_role_label: "",
   });
+
+  useEffect(() => {
+    seriesApi.list().then(setSeriesOptions).catch(() => {});
+  }, []);
+
+  const selectedSeries = useMemo(
+    () => seriesOptions.find((series) => String(series.id) === form.series_id),
+    [form.series_id, seriesOptions],
+  );
 
   useEffect(() => {
     if (isNew) return;
@@ -32,9 +45,11 @@ export default function PostEdit() {
           title: p.title,
           platform: p.platform,
           scheduled_at: p.scheduled_at
-            ? new Date(p.scheduled_at).toISOString().slice(0, 16)
+            ? format(new Date(p.scheduled_at), "yyyy-MM-dd'T'HH:mm")
             : "",
           status: p.status,
+          series_id: p.series ? String(p.series.id) : "",
+          series_role_label: p.series?.role_label || "",
         });
       })
       .catch(() => setError("Post not found"))
@@ -44,12 +59,22 @@ export default function PostEdit() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (form.series_id && !form.scheduled_at) {
+      setError("Series posts need a scheduled time.");
+      return;
+    }
+    if (selectedSeries && form.platform !== selectedSeries.platform) {
+      setError("Series posts must use the series platform.");
+      return;
+    }
     setSaving(true);
     const payload = {
       title: form.title,
       platform: form.platform,
       status: form.status,
-      scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
+      scheduled_at: form.scheduled_at || null,
+      series_id: form.series_id ? Number(form.series_id) : null,
+      series_role_label: form.series_id ? form.series_role_label.trim() || null : null,
     };
     try {
       if (isNew) {
@@ -89,13 +114,21 @@ export default function PostEdit() {
         <label>
           Platform
           <select
+            aria-describedby={form.series_id ? "platform-lock-hint" : undefined}
+            aria-label="Platform"
             value={form.platform}
             onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
+            disabled={Boolean(form.series_id)}
           >
             {PLATFORMS.map((pl) => (
               <option key={pl} value={pl}>{pl}</option>
             ))}
           </select>
+          {form.series_id && (
+            <span id="platform-lock-hint" className="field-hint">
+              Locked to {selectedSeries?.platform || form.platform} by the selected series.
+            </span>
+          )}
         </label>
         <label>
           Scheduled at (optional)
@@ -115,6 +148,39 @@ export default function PostEdit() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+        </label>
+        <label>
+          Content series
+          <select
+            value={form.series_id}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              const nextSeries = seriesOptions.find((series) => String(series.id) === nextId);
+              setForm((f) => ({
+                ...f,
+                series_id: nextId,
+                platform: nextSeries ? nextSeries.platform : f.platform,
+                series_role_label: nextId ? f.series_role_label : "",
+              }));
+            }}
+          >
+            <option value="">No series</option>
+            {seriesOptions.map((series) => (
+              <option key={series.id} value={series.id}>
+                {series.name} ({series.platform})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Series role label (optional)
+          <input
+            type="text"
+            value={form.series_role_label}
+            disabled={!form.series_id}
+            onChange={(e) => setForm((f) => ({ ...f, series_role_label: e.target.value }))}
+            placeholder="Teaser, reminder, follow-up"
+          />
         </label>
         <div className="form-actions">
           <button type="submit" disabled={saving} className="btn primary">
