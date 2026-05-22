@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
 import { enUS } from "date-fns/locale";
 import { format, getDay, parse, startOfWeek } from "date-fns";
 import { postsApi, seriesApi } from "../api/client";
+import {
+  buildSelectionRange,
+  calendarDaySelectionProps,
+  calendarSlotSelectionProps,
+  eventSelectionRange,
+} from "../utils/calendarSelection";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 
@@ -44,6 +50,14 @@ function editFormForPost(post) {
   };
 }
 
+function updateEditFormSchedule(form, postId, scheduledAt) {
+  if (form?.mode !== "edit" || form.post_id !== postId) return form;
+  return {
+    ...form,
+    scheduled_at: toLocalInput(scheduledAt),
+  };
+}
+
 function dateFromQuery(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -68,8 +82,14 @@ function postToEvent(post, kind) {
   };
 }
 
+function postSelectionRange(post) {
+  const start = new Date(post.scheduled_at);
+  return buildSelectionRange(start, new Date(start.getTime() + 60 * 60 * 1000));
+}
+
 export default function SeriesCalendarPage() {
   const { id } = useParams();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const requestedDate = searchParams.get("date");
   const shouldOpenNewPost = searchParams.get("newPost") === "1";
@@ -83,6 +103,8 @@ export default function SeriesCalendarPage() {
   const [relatedPosts, setRelatedPosts] = useState([]);
   const [quickForm, setQuickForm] = useState(null);
   const [savingPost, setSavingPost] = useState(false);
+  const [selectedRange, setSelectedRange] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,8 +166,10 @@ export default function SeriesCalendarPage() {
     [relatedPosts, series],
   );
 
-  const openPostForm = ({ start }) => {
+  const openPostForm = ({ start, end }) => {
     setError("");
+    setSelectedEventId(null);
+    setSelectedRange(buildSelectionRange(start, end));
     setQuickForm(createFormForSlot(start, view));
   };
 
@@ -184,6 +208,8 @@ export default function SeriesCalendarPage() {
           posts: current.posts.map((post) => (post.id === updated.id ? updated : post)),
         }));
         setDate(new Date(updated.scheduled_at));
+        setSelectedEventId(`series-${updated.id}`);
+        setSelectedRange(postSelectionRange(updated));
         setQuickForm(editFormForPost(updated));
       } else {
         const created = await postsApi.create({
@@ -196,6 +222,8 @@ export default function SeriesCalendarPage() {
         });
         setSeries((current) => ({ ...current, posts: [...current.posts, created] }));
         setDate(new Date(created.scheduled_at));
+        setSelectedEventId(`series-${created.id}`);
+        setSelectedRange(postSelectionRange(created));
         setQuickForm(null);
       }
     } catch (err) {
@@ -211,20 +239,29 @@ export default function SeriesCalendarPage() {
     const previousPosts = series.posts;
     const optimisticSchedule = format(new Date(start), "yyyy-MM-dd'T'HH:mm:ss");
     setError("");
+    setSelectedEventId(event.id);
+    setSelectedRange(eventSelectionRange({ ...event, start, end: new Date(start.getTime() + 60 * 60 * 1000) }));
     setSeries((current) => ({
       ...current,
       posts: current.posts.map((post) => (
         post.id === event.resource.post.id ? { ...post, scheduled_at: optimisticSchedule } : post
       )),
     }));
+    setQuickForm((current) => updateEditFormSchedule(current, post.id, optimisticSchedule));
     try {
       const updated = await postsApi.update(post.id, { scheduled_at: optimisticSchedule });
       setSeries((current) => ({
         ...current,
         posts: current.posts.map((post) => (post.id === updated.id ? updated : post)),
       }));
+      setSelectedEventId(`series-${updated.id}`);
+      setSelectedRange(postSelectionRange(updated));
+      setQuickForm((current) => updateEditFormSchedule(current, updated.id, updated.scheduled_at));
     } catch (err) {
       setSeries((current) => ({ ...current, posts: previousPosts }));
+      setSelectedEventId(event.id);
+      setSelectedRange(postSelectionRange(post));
+      setQuickForm((current) => updateEditFormSchedule(current, post.id, post.scheduled_at));
       setError(err.message || "Reschedule failed");
     }
   };
@@ -232,18 +269,30 @@ export default function SeriesCalendarPage() {
   const jumpToPost = (post) => {
     if (!post.scheduled_at) return;
     setDate(new Date(post.scheduled_at));
+    setSelectedEventId(`series-${post.id}`);
+    setSelectedRange(postSelectionRange(post));
     setQuickForm(editFormForPost(post));
   };
 
   const selectEvent = (event) => {
-    if (event.resource?.kind !== "series") return;
     setError("");
+    setSelectedEventId(event.id);
+    setSelectedRange(eventSelectionRange(event));
+    if (event.resource?.kind !== "series") return;
     setDate(event.start);
     setQuickForm(editFormForPost(event.resource.post));
   };
 
   if (loading) return <div className="loading">Loading series...</div>;
   if (!series) return <div className="error">{error || "Series not found"}</div>;
+
+  const calendarReturnTo = (
+    typeof location.state?.returnTo === "string"
+    && (location.state.returnTo === "/calendar" || location.state.returnTo.startsWith("/calendar?"))
+  ) ? location.state.returnTo : null;
+  const backLink = calendarReturnTo
+    ? { to: calendarReturnTo, label: "Back to calendar" }
+    : { to: "/", label: "Back to posts" };
 
   return (
     <div className="series-editor-page">
@@ -254,7 +303,7 @@ export default function SeriesCalendarPage() {
             {series.platform} series with posts staying on cadence through offsets from the series start.
           </p>
         </div>
-        <Link to="/" className="btn">Back to posts</Link>
+        <Link to={backLink.to} className="btn">{backLink.label}</Link>
       </div>
       {error && <div className="error">{error}</div>}
       <form className="series-settings" onSubmit={saveSeries}>
@@ -301,10 +350,15 @@ export default function SeriesCalendarPage() {
             endAccessor="end"
             titleAccessor="title"
             style={{ height: 640 }}
+            dayPropGetter={(day) => calendarDaySelectionProps(day, selectedRange)}
+            slotPropGetter={(slotStart) => calendarSlotSelectionProps(slotStart, selectedRange)}
             eventPropGetter={(event) => {
               if (event.resource.kind === "context") {
                 return {
-                  className: "related-platform-event",
+                  className: [
+                    "related-platform-event",
+                    event.id === selectedEventId ? "calendar-selected-event" : "",
+                  ].filter(Boolean).join(" "),
                   style: {
                     backgroundColor: "#e5e7eb",
                     borderColor: "#d1d5db",
@@ -313,7 +367,10 @@ export default function SeriesCalendarPage() {
                 };
               }
               return {
-                className: "series-editor-event",
+                className: [
+                  "series-editor-event",
+                  event.id === selectedEventId ? "calendar-selected-event" : "",
+                ].filter(Boolean).join(" "),
                 style: {
                   backgroundColor: event.resource.post.status === "published" ? "#15803d" : "#0f766e",
                 },

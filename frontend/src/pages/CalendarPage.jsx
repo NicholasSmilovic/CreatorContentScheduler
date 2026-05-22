@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { postsApi } from "../api/client";
+import {
+  buildSelectionRange,
+  calendarDaySelectionProps,
+  calendarSlotSelectionProps,
+  eventSelectionRange,
+} from "../utils/calendarSelection";
 
+const PLATFORMS = ["youtube", "instagram", "twitter", "tiktok", "linkedin"];
+const CALENDAR_VIEWS = ["month", "week", "day", "agenda"];
 const locales = { "en-US": enUS };
 const localizer = dateFnsLocalizer({
   format,
@@ -14,20 +23,45 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
+function platformFromQuery(value) {
+  return PLATFORMS.includes(value) ? value : "";
+}
+
+function viewFromQuery(value) {
+  return CALENDAR_VIEWS.includes(value) ? value : "month";
+}
+
+function dateFromQuery(value) {
+  if (!value) return new Date();
+  const parts = value.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return new Date();
+  const [year, month, day] = parts;
+  return new Date(year, month - 1, day);
+}
+
 export default function CalendarPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("month");
-  const [date, setDate] = useState(new Date());
+  const [platformFilter, setPlatformFilter] = useState(() => platformFromQuery(searchParams.get("platform")));
+  const [view, setView] = useState(() => viewFromQuery(searchParams.get("view")));
+  const [date, setDate] = useState(() => dateFromQuery(searchParams.get("date")));
   const [hoveredSeriesId, setHoveredSeriesId] = useState(null);
+  const [selectedRange, setSelectedRange] = useState(null);
+  const [selectedEventId, setSelectedEventId] = useState(null);
   const [connectorLines, setConnectorLines] = useState([]);
   const calendarSurfaceRef = useRef(null);
   const eventNodesRef = useRef(new Map());
 
   useEffect(() => {
+    let cancelled = false;
+    const params = platformFilter ? { platform: platformFilter } : {};
     postsApi
-      .list()
+      .list(params)
       .then((posts) => {
+        if (cancelled) return;
         const evts = posts
           .filter((p) => p.scheduled_at)
           .map((p) => ({
@@ -40,8 +74,19 @@ export default function CalendarPage() {
         setEvents(evts);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [platformFilter]);
+
+  const updateCalendarSearch = useCallback((nextState) => {
+    const params = new URLSearchParams();
+    if (nextState.platform) params.set("platform", nextState.platform);
+    if (nextState.view !== "month") params.set("view", nextState.view);
+    params.set("date", format(nextState.date, "yyyy-MM-dd"));
+    setSearchParams(params, { replace: true });
+  }, [setSearchParams]);
 
   const relatedEvents = useMemo(
     () => events
@@ -115,12 +160,47 @@ export default function CalendarPage() {
     </div>
   ), [registerEventNode]);
 
+  const openSeriesEditor = (event) => {
+    setSelectedRange(eventSelectionRange(event));
+    setSelectedEventId(event.id);
+    const seriesId = event.resource.series?.id;
+    if (!seriesId) return;
+    navigate(`/series/${seriesId}`, { state: { returnTo: `${location.pathname}${location.search}` } });
+  };
+
+  const selectSlot = ({ start, end }) => {
+    setHoveredSeriesId(null);
+    setSelectedEventId(null);
+    setSelectedRange(buildSelectionRange(start, end));
+  };
+
   if (loading) return <div className="loading">Loading calendar…</div>;
 
   return (
     <div className="calendar-page">
       <h1>Calendar</h1>
       <p className="calendar-hint">Scheduled posts appear as events. Only posts with a scheduled time are shown.</p>
+      <div className="calendar-filters">
+        <label>
+          Platform
+          <select
+            value={platformFilter}
+            onChange={(event) => {
+              const nextPlatform = event.target.value;
+              setHoveredSeriesId(null);
+              setSelectedEventId(null);
+              setSelectedRange(null);
+              setPlatformFilter(nextPlatform);
+              updateCalendarSearch({ platform: nextPlatform, view, date });
+            }}
+          >
+            <option value="">All platforms</option>
+            {PLATFORMS.map((platform) => (
+              <option key={platform} value={platform}>{platform}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="calendar-wrap series-line-surface" ref={calendarSurfaceRef}>
         <svg className="series-connectors" aria-hidden="true">
           {connectorLines.map((line) => (
@@ -136,23 +216,38 @@ export default function CalendarPage() {
         <Calendar
           localizer={localizer}
           events={events}
-          views={["month", "week", "day", "agenda"]}
+          selectable
+          views={CALENDAR_VIEWS}
           view={view}
           date={date}
           onView={(nextView) => {
             setHoveredSeriesId(null);
+            setSelectedEventId(null);
+            setSelectedRange(null);
             setView(nextView);
+            updateCalendarSearch({ platform: platformFilter, view: nextView, date });
           }}
           onNavigate={(nextDate) => {
             setHoveredSeriesId(null);
+            setSelectedEventId(null);
+            setSelectedRange(null);
             setDate(nextDate);
+            updateCalendarSearch({ platform: platformFilter, view, date: nextDate });
           }}
+          onSelectEvent={openSeriesEditor}
+          onSelectSlot={selectSlot}
           startAccessor="start"
           endAccessor="end"
           titleAccessor="title"
           style={{ height: 600 }}
+          dayPropGetter={(day) => calendarDaySelectionProps(day, selectedRange)}
+          slotPropGetter={(slotStart) => calendarSlotSelectionProps(slotStart, selectedRange)}
           eventPropGetter={(event) => ({
-            className: event.resource.series?.id === hoveredSeriesId ? "series-related-event" : "",
+            className: [
+              event.resource.series?.id === hoveredSeriesId ? "series-related-event" : "",
+              event.resource.series?.id ? "series-openable-event" : "",
+              event.id === selectedEventId ? "calendar-selected-event" : "",
+            ].filter(Boolean).join(" "),
             style: {
               backgroundColor: event.resource?.status === "published" ? "#22c55e" : "#3b82f6",
             },

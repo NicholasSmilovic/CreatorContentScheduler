@@ -366,6 +366,29 @@ a:hover {
   color: #6b7280;
 }
 
+.calendar-filters {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.calendar-filters label {
+  color: #374151;
+  display: grid;
+  font-size: 0.875rem;
+  font-weight: 600;
+  gap: 0.35rem;
+  max-width: 220px;
+  width: 100%;
+}
+
+.calendar-filters select {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+  padding: 0.55rem 0.65rem;
+}
+
 .calendar-wrap {
   position: relative;
   background: #fff;
@@ -380,6 +403,15 @@ a:hover {
 .rbc-event {
   padding: 2px 6px;
   font-size: 0.75rem;
+}
+
+.rbc-day-bg.calendar-selected-day {
+  background: rgba(15, 118, 110, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(15, 118, 110, 0.45);
+}
+
+.rbc-time-slot.calendar-selected-slot {
+  background: rgba(15, 118, 110, 0.16);
 }
 
 .series-link {
@@ -434,6 +466,10 @@ a:hover {
 .rbc-event.series-related-event {
   box-shadow: 0 0 0 2px #be123c;
   filter: saturate(1.2);
+}
+
+.rbc-event.series-openable-event {
+  cursor: pointer;
 }
 
 .series-form {
@@ -507,6 +543,10 @@ a:hover {
 .related-platform-event.rbc-event {
   box-shadow: none;
   opacity: 0.85;
+}
+
+.rbc-event.calendar-selected-event {
+  box-shadow: 0 0 0 2px #0f766e, 0 0 0 4px rgba(15, 118, 110, 0.18);
 }
 
 .series-post-list h2 {

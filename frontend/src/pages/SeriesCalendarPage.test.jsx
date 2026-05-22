@@ -106,6 +106,18 @@ describe("SeriesCalendarPage", () => {
     });
   });
 
+  it("links back to the main calendar when opened from the calendar", async () => {
+    renderPage({
+      pathname: "/series/8",
+      state: { returnTo: "/calendar?platform=instagram&view=week&date=2026-05-22" },
+    });
+
+    expect(await screen.findByRole("link", { name: "Back to calendar" })).toHaveAttribute(
+      "href",
+      "/calendar?platform=instagram&view=week&date=2026-05-22",
+    );
+  });
+
   it("opens on the first scheduled series post", async () => {
     seriesApi.get.mockResolvedValueOnce({
       id: 8,
