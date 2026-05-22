@@ -9,7 +9,6 @@ from app.schemas.post import PostResponse
 class SeriesBase(BaseModel):
     name: str
     platform: str
-    starts_at: datetime
 
 
 class SeriesCreate(SeriesBase):
@@ -23,6 +22,7 @@ class SeriesUpdate(BaseModel):
 
 class SeriesResponse(SeriesBase):
     id: int
+    starts_at: Optional[datetime] = None
     owner_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

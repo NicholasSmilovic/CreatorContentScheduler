@@ -15,7 +15,7 @@ const calendarPosts = [
     status: "scheduled",
     platform: "instagram",
     scheduled_at: "2026-05-22T09:00:00Z",
-    series: { id: 4, name: "Launch", role_label: "Teaser", offset_minutes: -1440 },
+        series: { id: 4, name: "Launch", position: 1, role_label: "Teaser", offset_minutes: 0 },
   },
   {
     id: 2,
@@ -23,7 +23,7 @@ const calendarPosts = [
     status: "scheduled",
     platform: "linkedin",
     scheduled_at: "2026-05-23T09:00:00Z",
-    series: { id: 4, name: "Launch", role_label: "Follow-up", offset_minutes: 0 },
+        series: { id: 4, name: "Launch", position: 2, role_label: "Follow-up", offset_minutes: 1440 },
   },
 ];
 

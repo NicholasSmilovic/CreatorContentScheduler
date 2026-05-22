@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
 import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
@@ -10,6 +11,8 @@ import {
   calendarDaySelectionProps,
   calendarSlotSelectionProps,
   eventSelectionRange,
+  postBufferEvents,
+  postEventEnd,
 } from "../utils/calendarSelection";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
@@ -18,9 +21,15 @@ const STATUSES = ["draft", "scheduled", "published", "failed"];
 const locales = { "en-US": enUS };
 const localizer = dateFnsLocalizer({ format, parse, startOfWeek, getDay, locales });
 const DragAndDropCalendar = withDragAndDrop(Calendar);
+const MIN_PLATFORM_SPACING_MS = 15 * 60 * 1000;
 
 function toLocalInput(value) {
+  if (!value) return "";
   return format(new Date(value), "yyyy-MM-dd'T'HH:mm");
+}
+
+function toApiDateTime(value) {
+  return format(new Date(value), "yyyy-MM-dd'T'HH:mm:ss");
 }
 
 function createFormForDate(start) {
@@ -68,7 +77,10 @@ function scheduledSeriesPosts(posts = []) {
   return posts
     .filter((post) => post.scheduled_at)
     .slice()
-    .sort((first, second) => new Date(first.scheduled_at) - new Date(second.scheduled_at));
+    .sort((first, second) => (
+      (first.series?.position ?? Number.MAX_SAFE_INTEGER)
+      - (second.series?.position ?? Number.MAX_SAFE_INTEGER)
+    ) || new Date(first.scheduled_at) - new Date(second.scheduled_at));
 }
 
 function postToEvent(post, kind) {
@@ -77,14 +89,38 @@ function postToEvent(post, kind) {
     id: `${kind}-${post.id}`,
     title: post.title,
     start,
-    end: new Date(start.getTime() + 60 * 60 * 1000),
+    end: postEventEnd(start),
     resource: { kind, post },
   };
 }
 
 function postSelectionRange(post) {
   const start = new Date(post.scheduled_at);
-  return buildSelectionRange(start, new Date(start.getTime() + 60 * 60 * 1000));
+  return buildSelectionRange(start, postEventEnd(start));
+}
+
+function shiftedSeriesPosts(posts, startsAt) {
+  const anchor = scheduledSeriesPosts(posts)[0];
+  if (!anchor) return posts;
+  const oldStart = new Date(anchor.scheduled_at);
+  const newStart = new Date(startsAt);
+  const delta = newStart.getTime() - oldStart.getTime();
+  return posts.map((post) => {
+    if (!post.scheduled_at) return post;
+    const position = post.series?.position;
+    const nextDate = position === 1
+      ? newStart
+      : new Date(new Date(post.scheduled_at).getTime() + delta);
+    const offsetMinutes = Math.round((nextDate.getTime() - newStart.getTime()) / 60000);
+    return {
+      ...post,
+      scheduled_at: toApiDateTime(nextDate),
+      series: post.series ? {
+        ...post.series,
+        offset_minutes: position === 1 ? 0 : offsetMinutes,
+      } : post.series,
+    };
+  });
 }
 
 export default function SeriesCalendarPage() {
@@ -105,6 +141,11 @@ export default function SeriesCalendarPage() {
   const [savingPost, setSavingPost] = useState(false);
   const [selectedRange, setSelectedRange] = useState(null);
   const [selectedEventId, setSelectedEventId] = useState(null);
+  const [seriesGroupBox, setSeriesGroupBox] = useState(null);
+  const [hoveredDragMode, setHoveredDragMode] = useState(null);
+  const calendarSurfaceRef = useRef(null);
+  const eventNodesRef = useRef(new Map());
+  const externalDragModeRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,10 +159,10 @@ export default function SeriesCalendarPage() {
         setSeries(data);
         setSeriesForm({
           name: data.name,
-          starts_at: queryDate && shouldOpenNewPost ? toLocalInput(queryDate) : toLocalInput(data.starts_at),
+          starts_at: data.starts_at ? toLocalInput(data.starts_at) : "",
         });
         const firstPostDate = scheduledSeriesPosts(data.posts)[0]?.scheduled_at;
-        const targetDate = queryDate || new Date(firstPostDate || data.starts_at);
+        const targetDate = queryDate || new Date(firstPostDate || data.starts_at || Date.now());
         setDate(targetDate);
         if (shouldOpenNewPost) {
           setQuickForm(createFormForDate(targetDate));
@@ -155,6 +196,7 @@ export default function SeriesCalendarPage() {
     () => scheduledSeriesPosts(series?.posts),
     [series],
   );
+  const seriesAnchor = seriesPosts[0] || null;
 
   const events = useMemo(
     () => [
@@ -165,6 +207,158 @@ export default function SeriesCalendarPage() {
     ].sort((first, second) => first.start - second.start),
     [relatedPosts, series],
   );
+  const bufferEvents = useMemo(
+    () => postBufferEvents(events, view),
+    [events, view],
+  );
+
+  const refreshSeries = useCallback(async () => {
+    const updated = await seriesApi.get(id);
+    setSeries(updated);
+    setSeriesForm({
+      name: updated.name,
+      starts_at: updated.starts_at ? toLocalInput(updated.starts_at) : "",
+    });
+    return updated;
+  }, [id]);
+
+  const validateSpacing = useCallback((candidates, excludedIds = new Set()) => {
+    const scheduledCandidates = candidates.filter((candidate) => candidate.scheduled_at);
+    for (let index = 0; index < scheduledCandidates.length; index += 1) {
+      for (let next = index + 1; next < scheduledCandidates.length; next += 1) {
+        if (
+          Math.abs(
+            new Date(scheduledCandidates[index].scheduled_at).getTime()
+            - new Date(scheduledCandidates[next].scheduled_at).getTime(),
+          ) < MIN_PLATFORM_SPACING_MS
+        ) {
+          return "Posts on the same platform must be at least 15 minutes apart.";
+        }
+      }
+    }
+
+    const existingPosts = [...seriesPosts, ...relatedPosts].filter((post) => (
+      post.scheduled_at && !excludedIds.has(post.id)
+    ));
+    const conflict = scheduledCandidates.some((candidate) => (
+      existingPosts.some((post) => (
+        Math.abs(new Date(candidate.scheduled_at).getTime() - new Date(post.scheduled_at).getTime())
+          < MIN_PLATFORM_SPACING_MS
+      ))
+    ));
+    return conflict ? "Posts on the same platform must be at least 15 minutes apart." : "";
+  }, [relatedPosts, seriesPosts]);
+
+  const validateAppendSchedule = useCallback((scheduledAt) => {
+    const nextDate = new Date(scheduledAt);
+    if (seriesPosts.length > 0) {
+      const lastPost = seriesPosts[seriesPosts.length - 1];
+      if (nextDate <= new Date(lastPost.scheduled_at)) {
+        return "Series posts must be scheduled after the current last post.";
+      }
+    }
+    return validateSpacing([{ scheduled_at: nextDate }]);
+  }, [seriesPosts, validateSpacing]);
+
+  const validateMemberSchedule = useCallback((post, scheduledAt) => {
+    const nextDate = new Date(scheduledAt);
+    const position = post.series?.position;
+    if (position === 1) {
+      const shiftedPosts = shiftedSeriesPosts(seriesPosts, nextDate);
+      return validateSpacing(
+        shiftedPosts.map((candidate) => ({
+          post_id: candidate.id,
+          scheduled_at: candidate.scheduled_at,
+        })),
+        new Set(shiftedPosts.map((candidate) => candidate.id)),
+      );
+    }
+
+    const currentIndex = seriesPosts.findIndex((candidate) => candidate.id === post.id);
+    const previousPost = seriesPosts[currentIndex - 1];
+    const nextPost = seriesPosts[currentIndex + 1];
+    if (previousPost && nextDate <= new Date(previousPost.scheduled_at)) {
+      return "Series posts must stay after the previous post.";
+    }
+    if (nextPost && nextDate >= new Date(nextPost.scheduled_at)) {
+      return "Series posts must stay before the next post.";
+    }
+    return validateSpacing([{ post_id: post.id, scheduled_at: nextDate }], new Set([post.id]));
+  }, [seriesPosts, validateSpacing]);
+
+  const registerEventNode = useCallback((eventId, node) => {
+    if (node) {
+      eventNodesRef.current.set(eventId, node.closest(".rbc-event") || node);
+    } else {
+      eventNodesRef.current.delete(eventId);
+    }
+  }, []);
+
+  const groupBoxContainer = useCallback(() => {
+    if (!calendarSurfaceRef.current) return null;
+    if (view === "day" || view === "week") {
+      return calendarSurfaceRef.current.querySelector(".rbc-time-content") || calendarSurfaceRef.current;
+    }
+    return calendarSurfaceRef.current;
+  }, [view]);
+
+  const updateGroupBox = useCallback(() => {
+    const container = groupBoxContainer();
+    if (!container || seriesPosts.length === 0) {
+      setSeriesGroupBox(null);
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const rects = seriesPosts
+      .map((post) => eventNodesRef.current.get(`series-${post.id}`))
+      .filter(Boolean)
+      .map((node) => node.getBoundingClientRect())
+      .filter((rect) => (
+        rect.width > 0
+        && rect.height > 0
+        && rect.right >= containerRect.left
+        && rect.left <= containerRect.right
+        && rect.bottom >= containerRect.top
+        && rect.top <= containerRect.bottom
+      ));
+
+    if (rects.length === 0) {
+      setSeriesGroupBox(null);
+      return;
+    }
+
+    const padding = 8;
+    const scrollLeft = container.scrollLeft || 0;
+    const scrollTop = container.scrollTop || 0;
+    const left = Math.min(...rects.map((rect) => rect.left)) - containerRect.left + scrollLeft - padding;
+    const top = Math.min(...rects.map((rect) => rect.top)) - containerRect.top + scrollTop - padding;
+    const right = Math.max(...rects.map((rect) => rect.right)) - containerRect.left + scrollLeft + padding;
+    const bottom = Math.max(...rects.map((rect) => rect.bottom)) - containerRect.top + scrollTop + padding;
+    setSeriesGroupBox({
+      container,
+      left: Math.max(left, 0),
+      top: Math.max(top, 0),
+      width: Math.max(right - left, 32),
+      height: Math.max(bottom - top, 32),
+    });
+  }, [groupBoxContainer, seriesPosts]);
+
+  useLayoutEffect(() => {
+    let frame = window.requestAnimationFrame(updateGroupBox);
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updateGroupBox);
+    };
+    const scrollContainer = groupBoxContainer();
+    window.addEventListener("resize", scheduleUpdate);
+    scrollContainer?.addEventListener("scroll", scheduleUpdate, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", scheduleUpdate);
+      scrollContainer?.removeEventListener("scroll", scheduleUpdate);
+    };
+  }, [groupBoxContainer, updateGroupBox, view, date, events]);
 
   const openPostForm = ({ start, end }) => {
     const range = buildSelectionRange(start, end);
@@ -175,17 +369,76 @@ export default function SeriesCalendarPage() {
     setQuickForm(createFormForSlot(start, view));
   };
 
+  const shiftSeriesTo = async (nextStart) => {
+    if (!seriesAnchor) {
+      setError("Place the first post to set the series start.");
+      return false;
+    }
+    const validationError = validateMemberSchedule(seriesAnchor, nextStart);
+    if (validationError) {
+      setError(validationError);
+      return false;
+    }
+
+    const previousSeries = series;
+    const optimisticPosts = shiftedSeriesPosts(series.posts, nextStart);
+    const optimisticStart = toApiDateTime(nextStart);
+    setError("");
+    setSeries((current) => ({
+      ...current,
+      starts_at: optimisticStart,
+      posts: optimisticPosts,
+    }));
+    setSeriesForm((current) => ({ ...current, starts_at: toLocalInput(nextStart) }));
+    setSelectedEventId(`series-${seriesAnchor.id}`);
+    setSelectedRange(buildSelectionRange(new Date(nextStart), postEventEnd(nextStart)));
+
+    try {
+      const updated = await seriesApi.update(id, { starts_at: optimisticStart });
+      setSeries(updated);
+      setSeriesForm({
+        name: updated.name,
+        starts_at: updated.starts_at ? toLocalInput(updated.starts_at) : "",
+      });
+      const updatedAnchor = scheduledSeriesPosts(updated.posts)[0];
+      if (updatedAnchor) {
+        setSelectedEventId(`series-${updatedAnchor.id}`);
+        setSelectedRange(postSelectionRange(updatedAnchor));
+        setDate(new Date(updatedAnchor.scheduled_at));
+      }
+      return true;
+    } catch (err) {
+      setSeries(previousSeries);
+      setSeriesForm({
+        name: previousSeries.name,
+        starts_at: previousSeries.starts_at ? toLocalInput(previousSeries.starts_at) : "",
+      });
+      setSelectedRange(seriesAnchor ? postSelectionRange(seriesAnchor) : null);
+      setError(err.message || "Series move failed");
+      return false;
+    }
+  };
+
   const saveSeries = async (event) => {
     event.preventDefault();
     setSavingSeries(true);
     setError("");
     try {
-      const updated = await seriesApi.update(id, {
-        name: seriesForm.name,
-        starts_at: seriesForm.starts_at,
-      });
+      const payload = { name: seriesForm.name };
+      if (seriesAnchor && seriesForm.starts_at) {
+        const validationError = validateMemberSchedule(seriesAnchor, seriesForm.starts_at);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
+        payload.starts_at = seriesForm.starts_at;
+      }
+      const updated = await seriesApi.update(id, payload);
       setSeries(updated);
-      setSeriesForm({ name: updated.name, starts_at: toLocalInput(updated.starts_at) });
+      setSeriesForm({
+        name: updated.name,
+        starts_at: updated.starts_at ? toLocalInput(updated.starts_at) : "",
+      });
     } catch (err) {
       setError(err.message || "Series update failed");
     } finally {
@@ -199,21 +452,32 @@ export default function SeriesCalendarPage() {
     setError("");
     try {
       if (quickForm.mode === "edit") {
+        const originalPost = series.posts.find((post) => post.id === quickForm.post_id);
+        const validationError = originalPost
+          ? validateMemberSchedule(originalPost, quickForm.scheduled_at)
+          : "";
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         const updated = await postsApi.update(quickForm.post_id, {
           title: quickForm.title,
           status: quickForm.status,
           scheduled_at: quickForm.scheduled_at,
           series_role_label: quickForm.series_role_label.trim() || null,
         });
-        setSeries((current) => ({
-          ...current,
-          posts: current.posts.map((post) => (post.id === updated.id ? updated : post)),
-        }));
-        setDate(new Date(updated.scheduled_at));
-        setSelectedEventId(`series-${updated.id}`);
-        setSelectedRange(postSelectionRange(updated));
-        setQuickForm(editFormForPost(updated));
+        const refreshed = await refreshSeries();
+        const refreshedPost = refreshed.posts.find((post) => post.id === updated.id) || updated;
+        setDate(new Date(refreshedPost.scheduled_at));
+        setSelectedEventId(`series-${refreshedPost.id}`);
+        setSelectedRange(postSelectionRange(refreshedPost));
+        setQuickForm(editFormForPost(refreshedPost));
       } else {
+        const validationError = validateAppendSchedule(quickForm.scheduled_at);
+        if (validationError) {
+          setError(validationError);
+          return;
+        }
         const created = await postsApi.create({
           title: quickForm.title,
           platform: series.platform,
@@ -222,10 +486,11 @@ export default function SeriesCalendarPage() {
           series_id: Number(id),
           series_role_label: quickForm.series_role_label.trim() || null,
         });
-        setSeries((current) => ({ ...current, posts: [...current.posts, created] }));
-        setDate(new Date(created.scheduled_at));
-        setSelectedEventId(`series-${created.id}`);
-        setSelectedRange(postSelectionRange(created));
+        const refreshed = await refreshSeries();
+        const refreshedPost = refreshed.posts.find((post) => post.id === created.id) || created;
+        setDate(new Date(refreshedPost.scheduled_at));
+        setSelectedEventId(`series-${refreshedPost.id}`);
+        setSelectedRange(postSelectionRange(refreshedPost));
         setQuickForm(null);
       }
     } catch (err) {
@@ -238,11 +503,22 @@ export default function SeriesCalendarPage() {
   const moveEvent = async ({ event, start }) => {
     if (event.resource?.kind !== "series") return;
     const post = event.resource.post;
+    if (post.series?.position === 1) {
+      await shiftSeriesTo(start);
+      return;
+    }
+    const validationError = validateMemberSchedule(post, start);
+    if (validationError) {
+      setError(validationError);
+      setSelectedEventId(event.id);
+      setSelectedRange(postSelectionRange(post));
+      return;
+    }
     const previousPosts = series.posts;
-    const optimisticSchedule = format(new Date(start), "yyyy-MM-dd'T'HH:mm:ss");
+    const optimisticSchedule = toApiDateTime(start);
     setError("");
     setSelectedEventId(event.id);
-    setSelectedRange(eventSelectionRange({ ...event, start, end: new Date(start.getTime() + 60 * 60 * 1000) }));
+    setSelectedRange(eventSelectionRange({ ...event, start, end: postEventEnd(start) }));
     setDate(start);
     setSeries((current) => ({
       ...current,
@@ -267,6 +543,25 @@ export default function SeriesCalendarPage() {
       setQuickForm((current) => updateEditFormSchedule(current, post.id, post.scheduled_at));
       setError(err.message || "Reschedule failed");
     }
+  };
+
+  const dropStartForView = (start) => {
+    const nextStart = new Date(start);
+    if (view === "month" && seriesAnchor?.scheduled_at) {
+      const anchorStart = new Date(seriesAnchor.scheduled_at);
+      nextStart.setHours(anchorStart.getHours(), anchorStart.getMinutes(), 0, 0);
+    }
+    return nextStart;
+  };
+
+  const dropSeriesGroup = ({ start }) => {
+    if (externalDragModeRef.current !== "series-group") return;
+    shiftSeriesTo(dropStartForView(start));
+  };
+
+  const dragFromOutsideItem = () => {
+    if (externalDragModeRef.current !== "series-group" || !seriesAnchor) return null;
+    return postToEvent(seriesAnchor, "series");
   };
 
   const jumpToPost = (post) => {
@@ -328,21 +623,27 @@ export default function SeriesCalendarPage() {
         <label>
           Series start
           <input
+            aria-label="Series start"
             type="datetime-local"
             value={seriesForm.starts_at}
             onChange={(event) => setSeriesForm((current) => ({ ...current, starts_at: event.target.value }))}
-            required
+            disabled={!seriesAnchor}
+            required={Boolean(seriesAnchor)}
           />
+          {!seriesAnchor && (
+            <span className="field-hint">Place the first post to set the series start.</span>
+          )}
         </label>
         <button type="submit" className="btn primary" disabled={savingSeries}>
           {savingSeries ? "Saving..." : "Save series"}
         </button>
       </form>
       <div className="series-editor-grid">
-        <div className="calendar-wrap series-calendar-wrap">
+        <div className="calendar-wrap series-calendar-wrap" ref={calendarSurfaceRef}>
           <DragAndDropCalendar
             localizer={localizer}
             events={events}
+            backgroundEvents={bufferEvents}
             selectable
             resizable={false}
             views={["month", "week", "day", "agenda"]}
@@ -354,6 +655,8 @@ export default function SeriesCalendarPage() {
             onSelectSlot={openPostForm}
             onSelectEvent={selectEvent}
             onEventDrop={moveEvent}
+            onDropFromOutside={dropSeriesGroup}
+            dragFromOutsideItem={dragFromOutsideItem}
             draggableAccessor={(event) => event.resource.kind === "series"}
             startAccessor="start"
             endAccessor="end"
@@ -362,6 +665,9 @@ export default function SeriesCalendarPage() {
             dayPropGetter={(day) => calendarDaySelectionProps(day, selectedRange)}
             slotPropGetter={(slotStart) => calendarSlotSelectionProps(slotStart, selectedRange)}
             eventPropGetter={(event) => {
+              if (event.resource?.kind === "post-buffer") {
+                return { className: "post-buffer-event" };
+              }
               if (event.resource.kind === "context") {
                 return {
                   className: [
@@ -378,6 +684,11 @@ export default function SeriesCalendarPage() {
               return {
                 className: [
                   "series-editor-event",
+                  event.resource.post.series?.position === 1 ? "series-anchor-event" : "",
+                  hoveredDragMode === "group" ? "series-group-hover-event" : "",
+                  hoveredDragMode === "anchor" && event.resource.post.series?.position === 1
+                    ? "series-anchor-hover-event"
+                    : "",
                   event.id === selectedEventId ? "calendar-selected-event" : "",
                 ].filter(Boolean).join(" "),
                 style: {
@@ -387,17 +698,66 @@ export default function SeriesCalendarPage() {
             }}
             components={{
               event: ({ event }) => (
-                <div className="series-event-content">
-                  <span>{event.title}</span>
-                  {event.resource.kind === "context" ? (
-                    <em>same-platform post</em>
-                  ) : (
-                    event.resource.post.series?.role_label && <em>{event.resource.post.series.role_label}</em>
-                  )}
-                </div>
+                event.resource?.kind === "post-buffer" ? (
+                  <span className="post-buffer-label">15-minute buffer</span>
+                ) : (
+                  <div
+                    ref={(node) => registerEventNode(event.id, node)}
+                    className="series-event-content"
+                    onMouseEnter={() => {
+                      if (event.resource.kind === "series" && event.resource.post.series?.position === 1) {
+                        setHoveredDragMode("anchor");
+                      }
+                    }}
+                    onMouseLeave={() => setHoveredDragMode(null)}
+                  >
+                    {event.resource.kind === "series" && event.resource.post.series?.position && (
+                      <strong className="series-event-position">
+                        #{event.resource.post.series.position}
+                      </strong>
+                    )}
+                    <span>{event.title}</span>
+                    {event.resource.kind === "context" ? (
+                      <em>same-platform post</em>
+                    ) : event.resource.post.series?.position === 1 ? (
+                      <em className="series-start-badge">Series start</em>
+                    ) : (
+                      event.resource.post.series?.role_label && <em>{event.resource.post.series.role_label}</em>
+                    )}
+                  </div>
+                )
               ),
             }}
           />
+          {seriesGroupBox?.container && seriesPosts.length > 0 && createPortal(
+            <div
+              aria-label="Move series"
+              className={[
+                "series-group-drag-box",
+                hoveredDragMode === "group" ? "is-hovered" : "",
+              ].filter(Boolean).join(" ")}
+              draggable
+              onDragStart={(event) => {
+                externalDragModeRef.current = "series-group";
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", "series-group");
+              }}
+              onDragEnd={() => {
+                externalDragModeRef.current = null;
+                setHoveredDragMode(null);
+              }}
+              onMouseEnter={() => setHoveredDragMode("group")}
+              onMouseLeave={() => setHoveredDragMode(null)}
+              style={{
+                left: seriesGroupBox.left,
+                top: seriesGroupBox.top,
+                width: seriesGroupBox.width,
+                height: seriesGroupBox.height,
+              }}
+              title="Move series"
+            />,
+            seriesGroupBox.container,
+          )}
         </div>
         <aside className="series-quick-panel">
           <div className="series-quick-section">
@@ -433,6 +793,12 @@ export default function SeriesCalendarPage() {
                     ))}
                   </select>
                 </label>
+                {quickForm.mode === "edit" && (
+                  <label>
+                    Platform
+                    <input type="text" value={series.platform} disabled />
+                  </label>
+                )}
                 <label>
                   Series role label
                   <input
@@ -456,7 +822,11 @@ export default function SeriesCalendarPage() {
             ) : (
               <div className="series-quick-empty">
                 <h2>Add to this series</h2>
-                <p>Select a day or time slot on the calendar to schedule a series post.</p>
+                <p>
+                  {seriesPosts.length === 0
+                    ? "Place the first post to set the series start."
+                    : "Select a day or time slot on the calendar to schedule a series post."}
+                </p>
               </div>
             )}
           </div>
@@ -473,8 +843,12 @@ export default function SeriesCalendarPage() {
                     className="series-post-jump"
                     onClick={() => jumpToPost(post)}
                   >
-                    <span>{post.title}</span>
+                    <span>
+                      {post.series?.position ? `#${post.series.position} ` : ""}
+                      {post.title}
+                    </span>
                     <em>
+                      {post.series?.position === 1 ? "Series start - " : ""}
                       {post.series?.role_label ? `${post.series.role_label} - ` : ""}
                       {format(new Date(post.scheduled_at), "MMM d, yyyy HH:mm")}
                     </em>

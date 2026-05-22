@@ -57,7 +57,9 @@ export default function SeriesList() {
                     </Link>
                   </td>
                   <td><span className="platform">{item.platform}</span></td>
-                  <td>{format(new Date(item.starts_at), "MMM d, yyyy HH:mm")}</td>
+                  <td>
+                    {item.starts_at ? format(new Date(item.starts_at), "MMM d, yyyy HH:mm") : "Not set"}
+                  </td>
                   <td>
                     <Link to={`/series/${item.id}`} className="btn small">Open</Link>
                   </td>

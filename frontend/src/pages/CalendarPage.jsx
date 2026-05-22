@@ -10,6 +10,8 @@ import {
   calendarDaySelectionProps,
   calendarSlotSelectionProps,
   eventSelectionRange,
+  postBufferEvents,
+  postEventEnd,
 } from "../utils/calendarSelection";
 
 const PLATFORMS = ["youtube", "instagram", "twitter", "tiktok", "linkedin"];
@@ -68,7 +70,7 @@ export default function CalendarPage() {
             id: p.id,
             title: p.title,
             start: new Date(p.scheduled_at),
-            end: new Date(new Date(p.scheduled_at).getTime() + 60 * 60 * 1000),
+            end: postEventEnd(p.scheduled_at),
             resource: { platform: p.platform, status: p.status, series: p.series },
           }));
         setEvents(evts);
@@ -93,6 +95,10 @@ export default function CalendarPage() {
       .filter((event) => event.resource.series?.id === hoveredSeriesId)
       .sort((first, second) => first.start - second.start),
     [events, hoveredSeriesId],
+  );
+  const bufferEvents = useMemo(
+    () => postBufferEvents(events, view),
+    [events, view],
   );
 
   const registerEventNode = useCallback((eventId, node) => {
@@ -148,17 +154,27 @@ export default function CalendarPage() {
     };
   }, [updateConnectorLines, view]);
 
-  const CalendarEvent = useCallback(({ event }) => (
-    <div
-      ref={(node) => registerEventNode(event.id, node)}
-      className="calendar-event-content"
-      onMouseEnter={() => setHoveredSeriesId(event.resource.series?.id || null)}
-      onMouseLeave={() => setHoveredSeriesId(null)}
-    >
-      <span>{event.title}</span>
-      {event.resource.series?.role_label && <em>{event.resource.series.role_label}</em>}
-    </div>
-  ), [registerEventNode]);
+  const CalendarEvent = useCallback(({ event }) => {
+    if (event.resource?.kind === "post-buffer") {
+      return <span className="post-buffer-label">15-minute buffer</span>;
+    }
+    return (
+      <div
+        ref={(node) => registerEventNode(event.id, node)}
+        className="calendar-event-content"
+        onMouseEnter={() => setHoveredSeriesId(event.resource.series?.id || null)}
+        onMouseLeave={() => setHoveredSeriesId(null)}
+      >
+        <span>{event.title}</span>
+        {event.resource.series && (
+          <em>
+            {event.resource.series.position ? `#${event.resource.series.position}` : ""}
+            {event.resource.series.role_label ? ` ${event.resource.series.role_label}` : ""}
+          </em>
+        )}
+      </div>
+    );
+  }, [registerEventNode]);
 
   const openSeriesEditor = (event) => {
     setSelectedRange(eventSelectionRange(event));
@@ -228,6 +244,7 @@ export default function CalendarPage() {
         <Calendar
           localizer={localizer}
           events={events}
+          backgroundEvents={bufferEvents}
           selectable
           views={CALENDAR_VIEWS}
           view={view}
@@ -256,16 +273,21 @@ export default function CalendarPage() {
           style={{ height: 600 }}
           dayPropGetter={(day) => calendarDaySelectionProps(day, selectedRange)}
           slotPropGetter={(slotStart) => calendarSlotSelectionProps(slotStart, selectedRange)}
-          eventPropGetter={(event) => ({
-            className: [
-              event.resource.series?.id === hoveredSeriesId ? "series-related-event" : "",
-              event.resource.series?.id ? "series-openable-event" : "",
-              event.id === selectedEventId ? "calendar-selected-event" : "",
-            ].filter(Boolean).join(" "),
-            style: {
-              backgroundColor: event.resource?.status === "published" ? "#22c55e" : "#3b82f6",
-            },
-          })}
+          eventPropGetter={(event) => {
+            if (event.resource?.kind === "post-buffer") {
+              return { className: "post-buffer-event" };
+            }
+            return {
+              className: [
+                event.resource.series?.id === hoveredSeriesId ? "series-related-event" : "",
+                event.resource.series?.id ? "series-openable-event" : "",
+                event.id === selectedEventId ? "calendar-selected-event" : "",
+              ].filter(Boolean).join(" "),
+              style: {
+                backgroundColor: event.resource?.status === "published" ? "#22c55e" : "#3b82f6",
+              },
+            };
+          }}
           components={{ event: CalendarEvent }}
         />
       </div>

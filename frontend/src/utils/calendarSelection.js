@@ -1,4 +1,6 @@
 const SLOT_DURATION_MS = 30 * 60 * 1000;
+export const POST_BUFFER_DURATION_MS = 15 * 60 * 1000;
+export const POST_EVENT_DURATION_MS = 60 * 1000;
 
 function toDate(value) {
   return value instanceof Date ? value : new Date(value);
@@ -27,6 +29,36 @@ export function buildSelectionRange(start, end) {
 
 export function eventSelectionRange(event) {
   return buildSelectionRange(event.start, event.end);
+}
+
+export function postEventEnd(start) {
+  return new Date(toDate(start).getTime() + POST_EVENT_DURATION_MS);
+}
+
+export function postBufferRange(start) {
+  const scheduledAt = toDate(start);
+  return {
+    start: new Date(scheduledAt.getTime() - POST_BUFFER_DURATION_MS),
+    end: new Date(scheduledAt.getTime() + POST_BUFFER_DURATION_MS),
+  };
+}
+
+export function postBufferEvents(events, view) {
+  if (view !== "day" && view !== "week") return [];
+  return events.map((event) => {
+    const range = postBufferRange(event.start);
+    return {
+      id: `buffer-${event.id}`,
+      title: "15-minute buffer",
+      start: range.start,
+      end: range.end,
+      resource: {
+        kind: "post-buffer",
+        sourceEventId: event.id,
+        platform: event.resource?.platform || event.resource?.post?.platform,
+      },
+    };
+  });
 }
 
 export function calendarDaySelectionProps(day, selectedRange) {

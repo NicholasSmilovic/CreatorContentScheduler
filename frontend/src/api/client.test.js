@@ -159,8 +159,8 @@ describe('seriesApi', () => {
     globalThis.fetch = originalFetch
   })
 
-  it('creates a series with a platform and start time', async () => {
-    const data = { name: 'Launch', platform: 'instagram', starts_at: '2026-06-10T10:00:00.000Z' }
+  it('creates a series with a platform', async () => {
+    const data = { name: 'Launch', platform: 'instagram' }
     globalThis.fetch.mockResolvedValueOnce({
       ok: true,
       status: 201,

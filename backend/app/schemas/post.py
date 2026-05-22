@@ -29,6 +29,7 @@ class PostSeriesSummary(BaseModel):
     id: int
     name: str
     platform: str
+    position: int
     role_label: Optional[str] = None
     offset_minutes: int
 

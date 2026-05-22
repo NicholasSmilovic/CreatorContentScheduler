@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user_id
 from app.core.database import get_db
-from app.core.series_schedule import scheduled_from_offset
+from app.core.series_schedule import shift_series_start
 from app.models.series import ContentSeries
 from app.schemas.series import SeriesCreate, SeriesDetailResponse, SeriesResponse, SeriesUpdate
 
@@ -31,6 +31,7 @@ def serialize_detail(series: ContentSeries):
                     "id": series.id,
                     "name": series.name,
                     "platform": series.platform,
+                    "position": membership.position,
                     "role_label": membership.role_label,
                     "offset_minutes": membership.offset_minutes,
                 },
@@ -66,7 +67,7 @@ async def list_series(
     result = await db.execute(
         select(ContentSeries)
         .where(ContentSeries.owner_id == user_id)
-        .order_by(ContentSeries.starts_at.desc(), ContentSeries.created_at.desc())
+        .order_by(ContentSeries.starts_at.desc().nulls_last(), ContentSeries.created_at.desc())
     )
     return list(result.scalars().all())
 
@@ -80,7 +81,7 @@ async def create_series(
     series = ContentSeries(
         name=data.name,
         platform=data.platform,
-        starts_at=data.starts_at,
+        starts_at=None,
         owner_id=user_id,
     )
     db.add(series)
@@ -111,12 +112,17 @@ async def update_series(
     if "name" in changes:
         series.name = changes["name"]
     if "starts_at" in changes:
-        series.starts_at = changes["starts_at"]
-        for membership in series.memberships:
-            membership.post.scheduled_at = scheduled_from_offset(
-                series.starts_at,
-                membership.offset_minutes,
+        if changes["starts_at"] is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Series start cannot be cleared",
             )
+        await shift_series_start(
+            db,
+            series=series,
+            starts_at=changes["starts_at"],
+            user_id=user_id,
+        )
 
     await db.commit()
     await db.refresh(series)

@@ -19,7 +19,7 @@ describe("SeriesList", () => {
         id: 42,
         name: "Empty launch series",
         platform: "instagram",
-        starts_at: "2026-06-10T10:00:00",
+        starts_at: null,
       },
     ]);
 
@@ -30,6 +30,7 @@ describe("SeriesList", () => {
       "/series/42",
     );
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", "/series/42");
+    expect(screen.getByRole("cell", { name: "Not set" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New Series" })).toHaveAttribute("href", "/series/new");
   });
 

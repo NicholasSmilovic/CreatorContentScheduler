@@ -1,22 +1,14 @@
 import { useState } from "react";
-import { format } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 import { seriesApi } from "../api/client";
 
 const PLATFORMS = ["youtube", "instagram", "twitter", "tiktok", "linkedin"];
-
-function defaultStartTime() {
-  const nextHour = new Date();
-  nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
-  return format(nextHour, "yyyy-MM-dd'T'HH:mm");
-}
 
 export default function NewSeries() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
     name: "",
     platform: "",
-    starts_at: defaultStartTime(),
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -36,7 +28,6 @@ export default function NewSeries() {
     const nextErrors = {};
     if (!form.name.trim()) nextErrors.name = "Enter a series name.";
     if (!form.platform) nextErrors.platform = "Choose a platform for this series.";
-    if (!form.starts_at) nextErrors.starts_at = "Choose a series start time.";
     setFieldErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -53,10 +44,8 @@ export default function NewSeries() {
       const series = await seriesApi.create({
         name: form.name.trim(),
         platform: form.platform,
-        starts_at: form.starts_at,
       });
-      const startParam = encodeURIComponent(form.starts_at);
-      navigate(`/series/${series.id}?date=${startParam}&newPost=1`);
+      navigate(`/series/${series.id}`);
     } catch (err) {
       setError(err.message || "Series creation failed");
     } finally {
@@ -105,21 +94,6 @@ export default function NewSeries() {
           </select>
           {fieldErrors.platform && (
             <span id="series-platform-error" className="field-error-text">{fieldErrors.platform}</span>
-          )}
-        </label>
-        <label>
-          Series start
-          <input
-            aria-label="Series start"
-            type="datetime-local"
-            value={form.starts_at}
-            onChange={(event) => updateField("starts_at", event.target.value)}
-            aria-invalid={Boolean(fieldErrors.starts_at)}
-            aria-describedby={fieldErrors.starts_at ? "series-start-error" : undefined}
-            required
-          />
-          {fieldErrors.starts_at && (
-            <span id="series-start-error" className="field-error-text">{fieldErrors.starts_at}</span>
           )}
         </label>
         <div className="form-actions">

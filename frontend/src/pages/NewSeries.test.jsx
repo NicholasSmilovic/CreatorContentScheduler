@@ -20,7 +20,7 @@ describe("NewSeries", () => {
       id: 12,
       name: "Launch",
       platform: "instagram",
-      starts_at: "2026-06-10T14:00:00.000Z",
+      starts_at: null,
     });
   });
 
@@ -44,8 +44,7 @@ describe("NewSeries", () => {
       platform: "linkedin",
     }));
     expect(await screen.findByText("Series editor")).toBeInTheDocument();
-    expect(screen.getByText(/\/series\/12\?date=/)).toBeInTheDocument();
-    expect(screen.getByText(/newPost=1/)).toBeInTheDocument();
+    expect(screen.getByText("/series/12")).toBeInTheDocument();
   });
 
   it("starts without a platform and highlights missing required fields", async () => {
@@ -66,6 +65,7 @@ describe("NewSeries", () => {
     expect(screen.getByText("Choose a platform for this series.")).toBeInTheDocument();
     expect(screen.getByLabelText("Series name")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByLabelText("Platform")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByLabelText("Series start")).not.toBeInTheDocument();
     expect(seriesApi.create).not.toHaveBeenCalled();
   });
 });

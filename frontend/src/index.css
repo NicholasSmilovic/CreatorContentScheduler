@@ -317,7 +317,9 @@ a:hover {
 }
 
 .post-form input:disabled,
-.post-form select:disabled {
+.post-form select:disabled,
+.series-settings input:disabled,
+.series-quick-form input:disabled {
   background: #f3f4f6;
   color: #6b7280;
 }
@@ -653,6 +655,7 @@ a:hover {
 
 .series-calendar-wrap {
   min-width: 0;
+  overflow: hidden;
 }
 
 .series-quick-panel {
@@ -688,6 +691,40 @@ a:hover {
 
 .series-editor-event.rbc-event {
   min-height: 1.5rem;
+  position: relative;
+  z-index: 4;
+}
+
+.series-anchor-event.rbc-event {
+  cursor: grab;
+}
+
+.series-anchor-hover-event.rbc-event {
+  box-shadow: 0 0 0 2px #0f766e, 0 0 0 5px rgba(15, 118, 110, 0.2);
+}
+
+.series-group-hover-event.rbc-event {
+  filter: saturate(1.15);
+}
+
+.series-group-drag-box {
+  border: 2px dashed #7c3aed;
+  border-radius: 6px;
+  cursor: grab;
+  position: absolute;
+  z-index: 3;
+  background: rgba(124, 58, 237, 0.04);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.08);
+}
+
+.series-group-drag-box:hover,
+.series-group-drag-box.is-hovered {
+  background: rgba(124, 58, 237, 0.1);
+  border-style: solid;
+}
+
+.series-group-drag-box:active {
+  cursor: grabbing;
 }
 
 .related-platform-event.rbc-event {
@@ -695,8 +732,40 @@ a:hover {
   opacity: 0.85;
 }
 
+.rbc-day-slot .rbc-background-event.post-buffer-event {
+  align-items: stretch;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px dashed rgba(180, 83, 9, 0.55);
+  border-left: 3px solid rgba(180, 83, 9, 0.65);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+  color: transparent;
+  cursor: default;
+  min-height: 0;
+  opacity: 1;
+  padding: 0;
+  pointer-events: none;
+}
+
+.rbc-background-event.post-buffer-event .rbc-event-label,
+.rbc-background-event.post-buffer-event .rbc-event-content,
+.post-buffer-label {
+  display: none;
+}
+
 .rbc-event.calendar-selected-event {
   box-shadow: 0 0 0 2px #0f766e, 0 0 0 4px rgba(15, 118, 110, 0.18);
+}
+
+.series-event-position {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.series-start-badge {
+  color: #ecfeff;
+  font-weight: 700;
 }
 
 .series-post-list h2 {

@@ -89,6 +89,7 @@ export default function PostsList() {
                   <td>
                     {p.series ? (
                       <Link to={`/series/${p.series.id}`} className="series-link">
+                        {p.series.position ? `#${p.series.position} ` : ""}
                         {p.series.name}
                       </Link>
                     ) : "-"}

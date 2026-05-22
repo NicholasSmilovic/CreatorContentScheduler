@@ -25,6 +25,7 @@ const seriesPost = {
     id: 8,
     name: "Launch",
     platform: "instagram",
+    position: 1,
     role_label: "Announcement",
     offset_minutes: 0,
   },
@@ -87,6 +88,7 @@ describe("SeriesCalendarPage", () => {
         id: 8,
         name: "Launch",
         platform: "instagram",
+        position: 2,
         role_label: null,
         offset_minutes: 300,
       },
@@ -125,8 +127,8 @@ describe("SeriesCalendarPage", () => {
       platform: "instagram",
       starts_at: "2026-05-10T10:00:00",
       posts: [
-        { ...seriesPost, id: 12, title: "July post", scheduled_at: "2026-07-15T09:00:00" },
-        { ...seriesPost, id: 11, title: "June post", scheduled_at: "2026-06-05T09:00:00" },
+        { ...seriesPost, id: 12, title: "July post", scheduled_at: "2026-07-15T09:00:00", series: { ...seriesPost.series, position: 2 } },
+        { ...seriesPost, id: 11, title: "June post", scheduled_at: "2026-06-05T09:00:00", series: { ...seriesPost.series, position: 1 } },
       ],
     });
     postsApi.list.mockResolvedValueOnce([]);
@@ -142,7 +144,7 @@ describe("SeriesCalendarPage", () => {
       id: 8,
       name: "Launch",
       platform: "instagram",
-      starts_at: "2026-06-10T10:00:00",
+      starts_at: null,
       posts: [],
     });
     postsApi.list.mockResolvedValueOnce([]);
@@ -151,6 +153,8 @@ describe("SeriesCalendarPage", () => {
     expect(await screen.findByRole("heading", { name: "Add post" })).toBeInTheDocument();
     expect(screen.getByLabelText("Scheduled at")).toHaveValue("2026-06-10T10:00");
     expect(screen.queryByLabelText("Platform")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Series start")).toBeDisabled();
+    expect(screen.getByText("Place the first post to set the series start.")).toBeInTheDocument();
   });
 
   it("jumps the calendar when a series post is selected from the list", async () => {
@@ -160,8 +164,8 @@ describe("SeriesCalendarPage", () => {
       platform: "instagram",
       starts_at: "2026-05-10T10:00:00",
       posts: [
-        { ...seriesPost, id: 11, title: "June post", scheduled_at: "2026-06-05T09:00:00" },
-        { ...seriesPost, id: 12, title: "July post", scheduled_at: "2026-07-15T09:00:00" },
+        { ...seriesPost, id: 11, title: "June post", scheduled_at: "2026-06-05T09:00:00", series: { ...seriesPost.series, position: 1 } },
+        { ...seriesPost, id: 12, title: "July post", scheduled_at: "2026-07-15T09:00:00", series: { ...seriesPost.series, position: 2 } },
       ],
     });
     postsApi.list.mockResolvedValueOnce([]);
@@ -203,6 +207,21 @@ describe("SeriesCalendarPage", () => {
         role_label: "Reminder",
       },
     };
+    seriesApi.get
+      .mockResolvedValueOnce({
+        id: 8,
+        name: "Launch",
+        platform: "instagram",
+        starts_at: scheduledAt(9),
+        posts: [seriesPost],
+      })
+      .mockResolvedValueOnce({
+        id: 8,
+        name: "Launch",
+        platform: "instagram",
+        starts_at: scheduledAt(9),
+        posts: [updatedPost],
+      });
     postsApi.update.mockResolvedValueOnce(updatedPost);
     renderPage();
 
@@ -238,9 +257,16 @@ describe("SeriesCalendarPage", () => {
   });
 
   it("creates quick-add posts with the series platform", async () => {
+    seriesApi.get.mockResolvedValueOnce({
+      id: 8,
+      name: "Launch",
+      platform: "instagram",
+      starts_at: null,
+      posts: [],
+    });
     const { container } = renderPage();
 
-    await screen.findAllByText("Series announcement");
+    await screen.findAllByText("Place the first post to set the series start.");
     fireEvent.click(container.querySelector(".rbc-date-cell button"));
 
     expect(await screen.findByRole("heading", { name: "Add post" })).toBeInTheDocument();

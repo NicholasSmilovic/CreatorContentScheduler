@@ -11,7 +11,7 @@ class ContentSeries(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     platform = Column(String(64), nullable=False)
-    starts_at = Column(DateTime(timezone=True), nullable=False)
+    starts_at = Column(DateTime(timezone=True), nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -22,7 +22,7 @@ class ContentSeries(Base):
         back_populates="series",
         cascade="all, delete-orphan",
         lazy="selectin",
-        order_by="SeriesPost.offset_minutes",
+        order_by="SeriesPost.position",
     )
 
     @property
@@ -32,10 +32,14 @@ class ContentSeries(Base):
 
 class SeriesPost(Base):
     __tablename__ = "series_posts"
-    __table_args__ = (UniqueConstraint("post_id", name="uq_series_posts_post_id"),)
+    __table_args__ = (
+        UniqueConstraint("post_id", name="uq_series_posts_post_id"),
+        UniqueConstraint("series_id", "position", name="uq_series_posts_series_position"),
+    )
 
     series_id = Column(Integer, ForeignKey("content_series.id"), primary_key=True)
     post_id = Column(Integer, ForeignKey("posts.id"), primary_key=True)
+    position = Column(Integer, nullable=False)
     offset_minutes = Column(Integer, nullable=False)
     role_label = Column(String(128), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -6,9 +6,11 @@ import { postsApi } from "../api/client";
 
 vi.mock("react-big-calendar", () => ({
   Calendar: ({
+    backgroundEvents = [],
     date,
     view,
     dayPropGetter,
+    eventPropGetter,
     slotPropGetter,
     onDrillDown,
     onNavigate,
@@ -21,11 +23,21 @@ vi.mock("react-big-calendar", () => ({
     const activeDate = date
       ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
       : "";
+    const firstBuffer = backgroundEvents[0];
+    const firstBufferClass = firstBuffer ? eventPropGetter?.(firstBuffer)?.className || "" : "";
+    const formatTime = (value) => (
+      `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`
+    );
 
     return (
       <div>
         <div data-testid="main-active-date">{activeDate}</div>
         <div data-testid="main-active-view">{view}</div>
+        <div data-testid="main-buffer-count">{backgroundEvents.length}</div>
+        <div data-testid="main-first-buffer">
+          {firstBuffer ? `${formatTime(firstBuffer.start)}-${formatTime(firstBuffer.end)}` : ""}
+        </div>
+        <div data-testid="main-first-buffer-class">{firstBufferClass}</div>
         <div data-testid="main-selected-day" className={selectedDayProps.className || ""} />
         <div data-testid="main-clicked-day" className={clickedDayProps.className || ""} />
         <div data-testid="main-selected-slot" className={selectedSlotProps.className || ""} />
@@ -72,9 +84,9 @@ vi.mock("../api/client", () => ({
   postsApi: { list: vi.fn() },
 }));
 
-function renderPage() {
+function renderPage(initialEntry = "/calendar") {
   return render(
-    <MemoryRouter initialEntries={["/calendar"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/calendar" element={<CalendarPage />} />
       </Routes>
@@ -100,6 +112,29 @@ describe("CalendarPage selection display", () => {
 
     expect(screen.getByTestId("main-selected-day")).toHaveClass("calendar-selected-day");
     expect(screen.getByTestId("main-selected-slot")).toHaveClass("calendar-selected-slot");
+  });
+
+  it("shows 15-minute post buffers only in week and day views", async () => {
+    const scheduledPost = {
+      id: 1,
+      title: "Launch teaser",
+      platform: "instagram",
+      status: "scheduled",
+      scheduled_at: "2026-05-22T10:00:00",
+      series: null,
+    };
+    postsApi.list.mockResolvedValueOnce([scheduledPost]);
+    const { unmount } = renderPage("/calendar?view=week&date=2026-05-22");
+
+    await waitFor(() => expect(screen.getByTestId("main-buffer-count")).toHaveTextContent("1"));
+    expect(screen.getByTestId("main-first-buffer")).toHaveTextContent("09:45-10:15");
+    expect(screen.getByTestId("main-first-buffer-class")).toHaveTextContent("post-buffer-event");
+
+    unmount();
+    postsApi.list.mockResolvedValueOnce([scheduledPost]);
+    renderPage("/calendar?date=2026-05-22");
+
+    await waitFor(() => expect(screen.getByTestId("main-buffer-count")).toHaveTextContent("0"));
   });
 
   it("keeps a clicked month day visible", async () => {
