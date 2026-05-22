@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creator Scheduler Local UI Iteration"
+  short_description: "Iterate on the local Scheduler UI"
+  default_prompt: "Use $creator-scheduler-iterate-local-ui to run the Creator Scheduler locally and verify this UI change with screenshots."

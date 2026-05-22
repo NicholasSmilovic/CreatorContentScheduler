@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creator Scheduler Backend Test Runs"
+  short_description: "Run backend tests for Creator Scheduler"
+  default_prompt: "Use $creator-scheduler-run-backend-tests to run and triage the Creator Scheduler backend tests."

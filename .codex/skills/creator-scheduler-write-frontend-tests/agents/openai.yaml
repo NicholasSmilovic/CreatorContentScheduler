@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creator Scheduler Frontend Test Writing"
+  short_description: "Write frontend tests for Creator Scheduler"
+  default_prompt: "Use $creator-scheduler-write-frontend-tests to add focused frontend test coverage for this Creator Scheduler change."
