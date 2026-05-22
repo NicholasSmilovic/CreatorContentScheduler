@@ -349,6 +349,156 @@ a:hover {
   box-shadow: 0 0 0 1px #dc2626;
 }
 
+.availability-panel {
+  border-top: 1px solid #e5e7eb;
+  margin: 0 0 1rem;
+  padding-top: 1rem;
+}
+
+.availability-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.availability-header strong,
+.availability-header span {
+  display: block;
+}
+
+.availability-header strong {
+  color: #111827;
+  font-size: 0.875rem;
+}
+
+.availability-header span {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.availability-status {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.35rem 0.55rem;
+}
+
+.availability-status.available {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.availability-status.conflict {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.availability-timeline {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.availability-scale {
+  color: #6b7280;
+  display: flex;
+  font-size: 0.6875rem;
+  justify-content: space-between;
+}
+
+.availability-rail {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  height: 2rem;
+  overflow: hidden;
+  position: relative;
+}
+
+.availability-tick {
+  background: #d1d5db;
+  bottom: 0;
+  position: absolute;
+  top: 0;
+  width: 1px;
+}
+
+.availability-block {
+  background: rgba(220, 38, 38, 0.72);
+  border-radius: 4px;
+  bottom: 0.35rem;
+  min-width: 4px;
+  position: absolute;
+  top: 0.35rem;
+}
+
+.availability-candidate {
+  background: #2563eb;
+  bottom: 0.2rem;
+  position: absolute;
+  top: 0.2rem;
+  transform: translateX(-50%);
+  width: 3px;
+  z-index: 2;
+}
+
+.availability-candidate.conflict {
+  background: #991b1b;
+  width: 4px;
+}
+
+.availability-empty {
+  color: #6b7280;
+  font-size: 0.75rem;
+  margin: 0.5rem 0 0;
+}
+
+.availability-list {
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.availability-list li {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+}
+
+.availability-list span,
+.availability-list strong,
+.availability-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availability-list span {
+  color: #111827;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.availability-list strong {
+  color: #374151;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.availability-list em {
+  color: #6b7280;
+  font-size: 0.6875rem;
+  font-style: normal;
+}
+
 .form-actions {
   display: flex;
   gap: 0.75rem;

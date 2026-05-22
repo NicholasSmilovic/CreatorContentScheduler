@@ -5,7 +5,7 @@ import PostEdit from "./PostEdit";
 import { postsApi, seriesApi } from "../api/client";
 
 vi.mock("../api/client", () => ({
-  postsApi: { get: vi.fn(), create: vi.fn(), update: vi.fn() },
+  postsApi: { get: vi.fn(), create: vi.fn(), update: vi.fn(), list: vi.fn() },
   seriesApi: { list: vi.fn() },
 }));
 
@@ -13,6 +13,7 @@ describe("PostEdit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     seriesApi.list.mockResolvedValue([{ id: 9, name: "Launch", platform: "linkedin" }]);
+    postsApi.list.mockResolvedValue([]);
     postsApi.get.mockResolvedValue({
       id: 2,
       title: "Reminder",
@@ -76,5 +77,37 @@ describe("PostEdit", () => {
       series_id: 9,
     }));
     expect(await screen.findByText("Created post")).toBeInTheDocument();
+  });
+
+  it("shows platform availability and blocks same-platform times inside 15 minutes", async () => {
+    postsApi.list.mockResolvedValue([
+      {
+        id: 7,
+        title: "Existing launch post",
+        platform: "youtube",
+        status: "scheduled",
+        scheduled_at: "2026-06-17T10:05:00",
+      },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/posts/new"]}>
+        <Routes>
+          <Route path="/posts/new" element={<PostEdit />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Post title"), { target: { value: "Too close" } });
+    fireEvent.change(screen.getByLabelText("Scheduled at (optional)"), {
+      target: { value: "2026-06-17T10:10" },
+    });
+
+    expect(await screen.findByText("Existing launch post")).toBeInTheDocument();
+    expect(screen.getByText("Conflict")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(postsApi.create).not.toHaveBeenCalled();
+    expect(screen.getByText("Posts on the same platform must be at least 15 minutes apart.")).toBeInTheDocument();
   });
 });
