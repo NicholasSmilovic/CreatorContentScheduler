@@ -1,0 +1,4 @@
+interface:
+  display_name: "Creator Scheduler Frontend Test Runs"
+  short_description: "Run frontend tests for Creator Scheduler"
+  default_prompt: "Use $creator-scheduler-run-frontend-tests to run and triage the Creator Scheduler frontend tests."
