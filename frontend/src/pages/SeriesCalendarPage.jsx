@@ -167,9 +167,11 @@ export default function SeriesCalendarPage() {
   );
 
   const openPostForm = ({ start, end }) => {
+    const range = buildSelectionRange(start, end);
     setError("");
     setSelectedEventId(null);
-    setSelectedRange(buildSelectionRange(start, end));
+    setSelectedRange(range);
+    setDate(range.start);
     setQuickForm(createFormForSlot(start, view));
   };
 
@@ -241,6 +243,7 @@ export default function SeriesCalendarPage() {
     setError("");
     setSelectedEventId(event.id);
     setSelectedRange(eventSelectionRange({ ...event, start, end: new Date(start.getTime() + 60 * 60 * 1000) }));
+    setDate(start);
     setSeries((current) => ({
       ...current,
       posts: current.posts.map((post) => (
@@ -278,9 +281,15 @@ export default function SeriesCalendarPage() {
     setError("");
     setSelectedEventId(event.id);
     setSelectedRange(eventSelectionRange(event));
-    if (event.resource?.kind !== "series") return;
     setDate(event.start);
+    if (event.resource?.kind !== "series") return;
     setQuickForm(editFormForPost(event.resource.post));
+  };
+
+  const changeCalendarView = (nextView) => {
+    const nextDate = selectedRange?.start || date;
+    setView(nextView);
+    setDate(nextDate);
   };
 
   if (loading) return <div className="loading">Loading series...</div>;
@@ -339,7 +348,7 @@ export default function SeriesCalendarPage() {
             views={["month", "week", "day", "agenda"]}
             view={view}
             date={date}
-            onView={setView}
+            onView={changeCalendarView}
             onNavigate={(nextDate) => setDate(nextDate)}
             onDrillDown={(date) => openPostForm({ start: date })}
             onSelectSlot={openPostForm}

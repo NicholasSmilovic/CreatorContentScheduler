@@ -163,15 +163,27 @@ export default function CalendarPage() {
   const openSeriesEditor = (event) => {
     setSelectedRange(eventSelectionRange(event));
     setSelectedEventId(event.id);
+    setDate(event.start);
     const seriesId = event.resource.series?.id;
     if (!seriesId) return;
     navigate(`/series/${seriesId}`, { state: { returnTo: `${location.pathname}${location.search}` } });
   };
 
   const selectSlot = ({ start, end }) => {
+    const range = buildSelectionRange(start, end);
     setHoveredSeriesId(null);
     setSelectedEventId(null);
-    setSelectedRange(buildSelectionRange(start, end));
+    setSelectedRange(range);
+    setDate(range.start);
+    updateCalendarSearch({ platform: platformFilter, view, date: range.start });
+  };
+
+  const selectDrilldownDate = (nextDate) => {
+    setHoveredSeriesId(null);
+    setSelectedEventId(null);
+    setSelectedRange(buildSelectionRange(nextDate));
+    setDate(nextDate);
+    updateCalendarSearch({ platform: platformFilter, view, date: nextDate });
   };
 
   if (loading) return <div className="loading">Loading calendar…</div>;
@@ -221,21 +233,23 @@ export default function CalendarPage() {
           view={view}
           date={date}
           onView={(nextView) => {
+            const nextDate = selectedRange?.start || date;
             setHoveredSeriesId(null);
             setSelectedEventId(null);
-            setSelectedRange(null);
             setView(nextView);
-            updateCalendarSearch({ platform: platformFilter, view: nextView, date });
+            setDate(nextDate);
+            updateCalendarSearch({ platform: platformFilter, view: nextView, date: nextDate });
           }}
-          onNavigate={(nextDate) => {
+          onNavigate={(nextDate, nextView, action) => {
             setHoveredSeriesId(null);
             setSelectedEventId(null);
-            setSelectedRange(null);
+            setSelectedRange(action === "DATE" ? buildSelectionRange(nextDate) : null);
             setDate(nextDate);
             updateCalendarSearch({ platform: platformFilter, view, date: nextDate });
           }}
           onSelectEvent={openSeriesEditor}
           onSelectSlot={selectSlot}
+          onDrillDown={selectDrilldownDate}
           startAccessor="start"
           endAccessor="end"
           titleAccessor="title"

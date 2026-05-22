@@ -6,18 +6,26 @@ import { postsApi, seriesApi } from "../api/client";
 
 vi.mock("react-big-calendar", () => ({
   Calendar: ({
+    date,
     events = [],
+    view,
     dayPropGetter,
     slotPropGetter,
     onSelectEvent,
     onSelectSlot,
     onEventDrop,
+    onView,
   }) => {
     const seriesEvent = events.find((event) => event.resource?.kind === "series");
     const selectedDayProps = dayPropGetter?.(new Date("2026-06-18T00:00:00")) || {};
     const selectedSlotProps = slotPropGetter?.(new Date("2026-06-18T15:30:00")) || {};
+    const activeDate = date
+      ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+      : "";
     return (
       <div>
+        <div data-testid="series-active-date">{activeDate}</div>
+        <div data-testid="series-active-view">{view}</div>
         <div data-testid="series-selected-day" className={selectedDayProps.className || ""} />
         <div data-testid="series-selected-slot" className={selectedSlotProps.className || ""} />
         {events.map((event) => (
@@ -38,6 +46,9 @@ vi.mock("react-big-calendar", () => ({
           })}
         >
           Select series slot
+        </button>
+        <button type="button" onClick={() => onView?.("day")}>
+          Switch series day
         </button>
         <button
           type="button"
@@ -115,6 +126,12 @@ describe("SeriesCalendarPage drag-and-drop saving", () => {
     expect(await screen.findByRole("heading", { name: "Add post" })).toBeInTheDocument();
     expect(screen.getByTestId("series-selected-day")).toHaveClass("calendar-selected-day");
     expect(screen.getByTestId("series-selected-slot")).toHaveClass("calendar-selected-slot");
+    expect(screen.getByTestId("series-active-date")).toHaveTextContent("2026-06-18");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch series day" }));
+
+    expect(screen.getByTestId("series-active-view")).toHaveTextContent("day");
+    expect(screen.getByTestId("series-active-date")).toHaveTextContent("2026-06-18");
   });
 
   it("does not overwrite a calendar-moved post time when saving the open edit form", async () => {
