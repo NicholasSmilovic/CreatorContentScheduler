@@ -26,3 +26,14 @@ class Post(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     owner = relationship("User", back_populates="posts")
+    series_membership = relationship(
+        "SeriesPost",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        uselist=False,
+    )
+
+    @property
+    def series(self):
+        return self.series_membership

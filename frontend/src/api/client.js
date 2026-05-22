@@ -53,3 +53,12 @@ export const postsApi = {
     api(`/posts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id) => api(`/posts/${id}`, { method: "DELETE" }),
 };
+
+export const seriesApi = {
+  list: () => api("/series"),
+  get: (id) => api(`/series/${id}`),
+  create: (data) =>
+    api("/series", { method: "POST", body: JSON.stringify(data) }),
+  update: (id, data) =>
+    api(`/series/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+};

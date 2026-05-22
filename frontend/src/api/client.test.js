@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { api, authApi, postsApi } from './client'
+import { api, authApi, postsApi, seriesApi } from './client'
 
 describe('api', () => {
   const originalFetch = globalThis.fetch
@@ -146,6 +146,46 @@ describe('postsApi', () => {
         method: 'POST',
         body: JSON.stringify({ title: 'T', platform: 'youtube', status: 'draft' }),
       })
+    )
+  })
+})
+
+describe('seriesApi', () => {
+  const originalFetch = globalThis.fetch
+  beforeEach(() => {
+    globalThis.fetch = vi.fn()
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('creates a series with a platform', async () => {
+    const data = { name: 'Launch', platform: 'instagram' }
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({ id: 4, ...data }),
+    })
+    await seriesApi.create(data)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/series'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    )
+  })
+
+  it('updates an existing series', async () => {
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 4, name: 'Launch week' }),
+    })
+    await seriesApi.update(4, { name: 'Launch week' })
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/series/4'),
+      expect.objectContaining({ method: 'PATCH' })
     )
   })
 })

@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.models.post import Post
+from app.models.series import ContentSeries, SeriesPost  # Register series tables with metadata.
 from app.core.database import Base
 
 # Use sync SQLite for script (same DB file as async app)
