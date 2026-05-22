@@ -1,5 +1,4 @@
-from dataclasses import asdict
-from platform import java_ver
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from .config import settings
@@ -36,3 +35,35 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if "sqlite" in settings.database_url:
+            await migrate_sqlite_schema(conn)
+
+
+async def migrate_sqlite_schema(conn):
+    result = await conn.execute(text("PRAGMA table_info(content_series)"))
+    columns = {row[1] for row in result.fetchall()}
+    if not columns:
+        return
+    if "platform" in columns:
+        return
+
+    await conn.execute(text("ALTER TABLE content_series ADD COLUMN platform VARCHAR(64)"))
+    await conn.execute(
+        text(
+            """
+            UPDATE content_series
+            SET platform = COALESCE(
+                (
+                    SELECT posts.platform
+                    FROM series_posts
+                    JOIN posts ON posts.id = series_posts.post_id
+                    WHERE series_posts.series_id = content_series.id
+                    ORDER BY series_posts.offset_minutes ASC
+                    LIMIT 1
+                ),
+                'instagram'
+            )
+            WHERE platform IS NULL OR platform = ''
+            """
+        )
+    )
